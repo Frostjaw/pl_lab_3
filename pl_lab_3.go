@@ -36,11 +36,16 @@ func next_session_key(key string, hash string) string{
 		fmt.Print("ERROR: Hash string is empty")
 	}
 	result := 0
-    for i:=0; i<len(hash); i++ {
-        temp, _:= strconv.Atoi(calc_hash(key, int([]rune(hash)[i])))
+	for i:=0; i<len(hash); i++ {
+		index,_ := strconv.Atoi(string(hash[i]))
+        temp, _:= strconv.Atoi(calc_hash(key, index))
         result += temp
     }	
-    result_str:= strings.Repeat("0",10) + strconv.Itoa(result)[0:10]
+	temp := strconv.Itoa(result)
+	if len(temp) > 10 { // для обрезания пробелов, если длина < 10
+		temp = temp[0:10]
+	}
+	result_str:= strings.Repeat("0",10) + temp // HERE
     return result_str[len(result_str)-10:]
 }
 
@@ -83,24 +88,26 @@ func calc_hash(key string, val int) string{
 }
 
 func handleRequest(conn net.Conn){
-	message, _ := bufio.NewReader(conn).ReadString('\n')
-	temp := strings.Split(string(message), " ")
-	hash_str := temp[0]	
-	previous_key := temp[1][0:len(temp[1])-1] // убираем последний символ
+	var message[16]byte // буффер
+	bufio.NewReader(conn).Read(message[0:16])
+	temp := strings.Split(string(message[0:16]), " ")
+	hash_str := temp[0]
+	previous_key := temp[1]
 	fmt.Print("Initial hash: " + hash_str + " First key: " + previous_key) // лог
 	next_key := next_session_key(previous_key, hash_str)
-	previous_key = next_key
+	conn.Write([]byte(next_key))
 	fmt.Println(" Sent key: " + next_key) // лог
-	conn.Write([]byte(next_key + "\n"))
+	previous_key = next_key
+	received_key := ""
 	for i:=0;i<4;i++{ // цикл для 10 шагов
-		message, _ := bufio.NewReader(conn).ReadString('\n')
-		received_key := string(message)[0:len(string(message))-1] // убираем последний символ
 		next_key = next_session_key(previous_key, hash_str)
 		fmt.Print("Current key: " + next_key) // лог
+		bufio.NewReader(conn).Read(message[0:10])
+		received_key = string(message[0:10])
 		if received_key == next_key {			
 			next_key = next_session_key(received_key, hash_str)
 			previous_key = next_key
-			conn.Write([]byte(next_key + "\n"))
+			conn.Write([]byte(next_key))
 			fmt.Print(" Received key: " + received_key + " Status: OK " + "Sent key: " + next_key) // лог
 		}else{
 			fmt.Println(" Received key: " + received_key + " ERROR" + "My cur key: " + next_key) // лог
@@ -127,36 +134,37 @@ func start_client(ip_port string){
 		// handle error
 		fmt.Println("Could not connect to server")
 	}else{
+		var message[10]byte // буффер
 		hash_str := get_hash_str()
 		previous_key := get_session_key()
+		conn.Write([]byte(hash_str + " " + previous_key))
 		fmt.Println("Initial hash: " + hash_str + " First key: " + previous_key) // лог
-		fmt.Fprintf(conn, hash_str + " " + previous_key + "\n")
 		received_key := ""
 		next_key := ""
 		for i:= 0;i<4;i++{ // цикл для 10 шагов
-			message, _ := bufio.NewReader(conn).ReadString('\n')
-			received_key = string(message)[0:len(string(message))-1] // убираем последний символ			
 			next_key = next_session_key(previous_key, hash_str)
 			fmt.Print("Current key: " + next_key) // лог
+			bufio.NewReader(conn).Read(message[0:10])
+			received_key = string(message[0:10])
 			if received_key == next_key {
 				next_key = next_session_key(received_key, hash_str)
 				previous_key = next_key
-				fmt.Fprintf(conn, next_key + "\n")
+				conn.Write([]byte(next_key))
 				fmt.Print(" Received key: " + received_key + " Status: OK " + "Sent key: " + next_key) // лог
 			}else{
-				fmt.Println(" Received key: " + received_key + " ERROR" + "My cur key: " + next_key) // лог
+				fmt.Println(" Received key: " + received_key + " ERROR" + "My current key: " + next_key) // лог
 				break
 			}
 		}
-		// для 10 шага (прием и сравнение без отправки
-		message, _ := bufio.NewReader(conn).ReadString('\n')
-		received_key = string(message)[0:len(string(message))-1] // убираем последний символ
+		// для 10 шага (прием и сравнение без отправки)
+		bufio.NewReader(conn).Read(message[0:10])
+		received_key = string(message[0:10])
 		next_key = next_session_key(previous_key, hash_str)
 		fmt.Print("Current key: " + next_key) // лог
 		if received_key == next_key {
 			fmt.Println(" Received key: " + received_key + " Status: OK ") // лог
 		}else{
-			fmt.Println(" Received key: " + received_key + " ERROR" + "My cur key: " + next_key) // лог
+			fmt.Println(" Received key: " + received_key + " ERROR" + "My current key: " + next_key) // лог
 		}
 	}
 }
